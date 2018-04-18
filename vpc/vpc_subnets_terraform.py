@@ -5,7 +5,6 @@ POC for subnet calculator
 """
 
 import ipaddress
-import json
 from math import (
     log,
     ceil
@@ -81,8 +80,6 @@ def get_subnets(cidr, azs):
 
 if __name__ == '__main__':
 
-    import os
-    import sys
     import json
 
     import argparse

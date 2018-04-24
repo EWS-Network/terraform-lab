@@ -1,3 +1,13 @@
+terraform {
+
+    backend "s3" {
+
+	bucket	= "ews-terraform-state"
+//	key	= "${var.region}/${var.cidr}/${var.vpc_name}.tfstate"
+	key	= "ews-terraform-states/vpc/vpc.tfstate"
+	region	= "eu-west-1"
+	}
+}
 
 variable "region" {
     default = "eu-west-1"
@@ -82,7 +92,7 @@ resource "aws_vpc" "vpc_root" {
 
 # APP
 
-resource "aws_subnet" "app_subnets" {
+resource "aws_subnet"	"app_vpc_subnets" {
 
     count		= "${local.azs_count}"
 
@@ -91,7 +101,8 @@ resource "aws_subnet" "app_subnets" {
     cidr_block		= "${element(local.app_cidrs, count.index)}"
 
     tags = {
-	Usage		= "Storage"
+	Name		= "${format("Application-%s", replace(element(data.aws_availability_zones.available.names, count.index), var.region, ""))}"
+	Usage		= "Application"
 	Terraform	= "True"
 	VPCName		= "${var.vpc_name}"
     }
@@ -99,7 +110,7 @@ resource "aws_subnet" "app_subnets" {
 
 # Public
 
-resource "aws_subnet" "pub_subnets" {
+resource "aws_subnet"	"pub_vpc_subnets" {
 
     count		= "${local.azs_count}"
 
@@ -109,16 +120,17 @@ resource "aws_subnet" "pub_subnets" {
     map_public_ip_on_launch	= true
 
     tags = {
-	Usage		= "Storage"
+	Name		= "${format("Public-%s", replace(element(data.aws_availability_zones.available.names, count.index), var.region, ""))}"
+	Usage		= "Public"
 	Terraform	= "True"
 	VPCName		= "${var.vpc_name}"
     }
 }
 
 
-# Private
+# Private - Storage
 
-resource "aws_subnet" "stor_subnets" {
+resource "aws_subnet"	"stor_vpc_subnets" {
 
     count		= "${local.azs_count}"
 
@@ -127,6 +139,7 @@ resource "aws_subnet" "stor_subnets" {
     cidr_block		= "${element(local.stor_cidrs, count.index)}"
 
     tags = {
+	Name		= "${format("Storage-%s", replace(element(data.aws_availability_zones.available.names, count.index), var.region, ""))}"
 	Usage		= "Storage"
 	Terraform	= "True"
 	VPCName		= "${var.vpc_name}"
@@ -136,7 +149,7 @@ resource "aws_subnet" "stor_subnets" {
 
 ################
 #
-# Internet Gateway
+# Public Layer routing
 #
 ################
 
@@ -147,12 +160,40 @@ resource "aws_internet_gateway" "vpc_gw" {
 
 
 resource "aws_route_table" "pub_rtb" {
+
     vpc_id = "${aws_vpc.vpc_root.id}"
+
     route {
 	cidr_block	= "0.0.0.0/0"
 	gateway_id	= "${aws_internet_gateway.vpc_gw.id}"
     }
+
+    tags {
+	Name	= "PublicSubnetsRtb"
+	Env	= "${var.env}"
+	VPCName = "${var.vpc_name}"
+    }
 }
+
+
+resource "aws_route_table_association" "pub_subnets_assoc" {
+
+    count		= "${local.azs_count}"
+
+    subnet_id		= "${element(aws_subnet.pub_vpc_subnets.*.id, count.index)}"
+    route_table_id	= "${aws_route_table.pub_rtb.id}"
+    depends_on		= ["aws_subnet.pub_vpc_subnets"]
+
+}
+
+
+###############
+################
+#
+# Private Layers routing
+#
+################
+
 
 
 ################
@@ -162,71 +203,133 @@ resource "aws_route_table" "pub_rtb" {
 ################
 
 
-resource "aws_eip" "eip_nat_a" {
+resource "aws_eip"	"eip_nat_gw" {
 
     count		= "${var.env == "production" ? local.azs_count : 1 }"
     vpc = true
 }
 
 
-resource "aws_nat_gateway" "nat_gw" {
+resource "aws_nat_gateway" "app_nat_gw" {
 
     count		= "${var.env == "production" ? local.azs_count : 1 }"
 
-    allocation_id	= "${aws_eip.eip_nat_a.id}"
-    subnet_id		= "${aws_subnet.pub_az_a.id}"
+    allocation_id	= "${var.env == "production" ? element(aws_eip.eip_nat_gw.*.id, count.index)		: element(aws_eip.eip_nat_gw.*.id, 0)}"
+    subnet_id		= "${var.env == "production" ? element(aws_subnet.pub_vpc_subnets.*.id, count.index)	: element(aws_subnet.pub_vpc_subnets.*.id, 0) }"
 
     tags {
 	Name = "NAT GW"
     }
+
+    depends_on		= ["aws_eip.eip_nat_gw"]
+
+}
+
+################
+#
+# Routing table(s)
+#
+################
+
+resource "aws_route_table" "app_rtb" {
+
+    count		= "${var.env == "production" ? local.azs_count : 1 }"
+
+    route {
+ 	cidr_block	= "0.0.0.0/0"
+	gateway_id	= "${var.env == "production" ? element(aws_nat_gateway.app_nat_gw.*.id, count.index) : element(aws_nat_gateway.app_nat_gw.*.id, 0)}"
+    }
+
+    vpc_id = "${aws_vpc.vpc_root.id}"
+    tags {
+	Name	= "${format("ApplicationRtb-%s", replace(element(data.aws_availability_zones.available.names, count.index), var.region, ""))}"
+	Env	= "${var.env}"
+	VPCName = "${var.vpc_name}"
+    }
+    depends_on	 = ["aws_nat_gateway.app_nat_gw"]
+}
+
+resource "aws_route_table_association" "app_subnets_assoc" {
+
+    count		= "${var.env == "production" ? local.azs_count : 1 }"
+
+    subnet_id		= "${element(aws_subnet.app_vpc_subnets.*.id, count.index)}"
+    route_table_id	= "${var.env == "production" ? element(aws_route_table.app_rtb.*.id, count.index) : element(aws_route_table.app_rtb.*.id, 0)}"
+    depends_on		= ["aws_subnet.app_vpc_subnets", "aws_route_table.app_rtb"]
+
+}
+
+################
+#
+# Service Endpoints
+#
+################
+
+
+# S3
+
+resource "aws_vpc_endpoint"	"s3_app" {
+
+    count			= "${var.env == "production" ? local.azs_count : 1 }"
+
+    vpc_id			= "${aws_vpc.vpc_root.id}"
+    service_name		= "${format("com.amazonaws.%s.s3", var.region)}"
+
+    route_table_ids		= ["${element(aws_route_table.app_rtb.*.id, count.index)}"]
+
+    depends_on			= ["aws_route_table.app_rtb"]
 }
 
 
 ################
 #
-# NAT
+# Storage Layer routing
 #
 ################
 
 
-// resource "aws_route_table" "app_rtb" {
-//     vpc_id = "${aws_vpc.vpc_root.id}"
-//     route {
-// 	cidr_block = "0.0.0.0/0"
-// 	gateway_id = "${aws_nat_gateway.nat_gw_a.id}"
-//     }
-// }
+resource "aws_route_table" "stor_rtb" {
+
+    vpc_id = "${aws_vpc.vpc_root.id}"
+
+    tags {
+	Name	= "StorageSubnetsRtb"
+	Env	= "${var.env}"
+	VPCName = "${var.vpc_name}"
+    }
+}
 
 
-// resource "aws_route_table" "stor_rtb" {
-//     vpc_id = "${aws_vpc.vpc_root.id}"
-// }
+resource "aws_route_table_association" "stor_subnets_assoc" {
+
+    count		= "${local.azs_count}"
+
+    subnet_id		= "${element(aws_subnet.stor_vpc_subnets.*.id, count.index)}"
+    route_table_id	= "${aws_route_table.stor_rtb.id}"
+    depends_on		= ["aws_subnet.stor_vpc_subnets"]
+
+}
+
+################
+#
+# Service Endpoints
+#
+################
 
 
-// resource "aws_main_route_table_association" "rtb-assoc-pub" {
-//   vpc_id         = "${aws_vpc.vpc_root.id}"
-//   route_table_id = "${aws_route_table.pub_rtb.id}"
-// }
+# S3
 
+resource "aws_vpc_endpoint"	"s3_storage" {
 
-// resource "aws_route_table_association" "rtb-assoc-app" {
-//   // vpc_id         = "${aws_vpc.vpc_root.id}"
-//   route_table_id = "${aws_route_table.app_rtb.id}"
-// }
+    count			= "${var.env == "production" ? local.azs_count : 1 }"
 
+    vpc_id			= "${aws_vpc.vpc_root.id}"
+    service_name		= "${format("com.amazonaws.%s.s3", var.region)}"
 
-// resource "aws_route_table_association" "rtb-assoc-stor" {
-//     // vpc_id         = "${aws_vpc.vpc_root.id}"
-//     route_table_id = "${aws_route_table.stor_rtb.id}"
-// }
+    route_table_ids		= ["${element(aws_route_table.app_rtb.*.id, count.index)}"]
 
+    depends_on			= ["aws_route_table.app_rtb"]
+}
 
-// resource "aws_vpc_endpoint" "s3" {
-//     vpc_id       = "${aws_vpc.vpc_root.id}"
-//     service_name = "${format("com.amazonaws.%s.s3", var.region)}"
-
-//     route_table_ids = [
-// 	"${aws_route_table.app_rtb.id}"
-//     ]
-// }
+# DynamoDb
 

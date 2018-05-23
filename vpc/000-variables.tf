@@ -1,4 +1,3 @@
-
 ## VARIABLES
 
 variable "region" {
@@ -72,7 +71,6 @@ data "aws_ami" "centos" {
   owners = ["679593333241"] # MarketPlace
 }
 
-
 ## LOCALS
 
 locals {
@@ -81,7 +79,6 @@ locals {
   "pub_cidrs"  = "${split("|", data.external.cidrs.result["pub"])}"
   "stor_cidrs" = "${split("|", data.external.cidrs.result["stor"])}"
 }
-
 
 locals {
   ansible_vars_file_path = "/var/tmp/cf_vars.yml"

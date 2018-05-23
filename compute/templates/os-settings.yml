@@ -1,0 +1,26 @@
+
+locale: en_US.UTF-8
+timezone: UTC
+
+preserve_hostname: true
+manage_etc_hosts: false
+
+manage_resolv_conf: true
+
+resolv_conf:
+  options:
+    rotate: true
+    timeout: 1
+
+
+packages:
+  - emacs-nox
+  - htop
+  - tmux
+  - git
+
+
+runcmd:
+  - curl https://bootstrap.pypa.io/get-pip.py | python
+  - pip install awscli
+

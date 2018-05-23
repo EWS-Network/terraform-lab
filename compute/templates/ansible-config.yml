@@ -1,0 +1,17 @@
+---
+# Ansible files
+
+
+write_files:
+  - path: /var/tmp/site.yml
+    owner: root:root
+    permissions: 0644
+    encoding: b64
+    content: ${b64_content_site_yaml}
+
+  - path: ${ansible_vars_file_path}
+    owner: root:root
+    permissions: 0644
+    encoding: b64
+    content: ${b64_content_vars_yaml}
+

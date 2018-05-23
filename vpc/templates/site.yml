@@ -1,0 +1,11 @@
+
+- hosts:
+    - localhost
+  tasks:
+    - name: Say hello
+      debug:
+        msg: "Hello World !"
+
+  vars_files:
+    - ${ansible_vars_file_path}
+

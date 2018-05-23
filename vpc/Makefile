@@ -5,7 +5,7 @@
 ## Login   <john@epitech.net>
 ##
 ## Started on  Wed May 23 10:30:46 2018 John Mille
-## Last update Wed May 23 11:33:46 2018 John Mille
+## Last update Wed May 23 13:28:34 2018 John Mille
 ##
 
 # http://clarkgrubb.com/makefile-style-guide
@@ -29,16 +29,6 @@ RM		= rm
 ECHO		= echo -e
 TERRAFORM	= terraform
 
-
-all: modules clean init fmt plan
-
-
-apply: modules clean init fmt tfapply
-
-
-show: tfshow
-
-destroy: all tfdestroy
 
 
 modules:
@@ -68,6 +58,16 @@ tfdestroy:
 tfshow:
 	@$(TERRAFORM) show
 
+
+all: modules clean init fmt plan
+
+
+apply: modules clean init fmt tfapply
+
+
+show: tfshow
+
+destroy: all tfdestroy
 
 .PHONY	: all apply destroy modules clean init fmt plan tfapply tfdestroy show tfshow
 

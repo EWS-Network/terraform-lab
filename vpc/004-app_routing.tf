@@ -40,7 +40,7 @@ resource "aws_route_table" "app_rtb" {
 }
 
 resource "aws_route_table_association" "app_subnets_assoc" {
-  count = "${var.env == "production" ? local.azs_count : 1 }"
+  count = "${local.azs_count}"
 
   subnet_id      = "${element(aws_subnet.app_vpc_subnets.*.id, count.index)}"
   route_table_id = "${var.env == "production" ? element(aws_route_table.app_rtb.*.id, count.index) : element(aws_route_table.app_rtb.*.id, 0)}"
